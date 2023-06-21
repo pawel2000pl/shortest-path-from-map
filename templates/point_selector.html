@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Shortest path</title>
+</head>
+
+<body>
+    <h3>Select points</h3>
+    <canvas id="img_canvas" style="position: absolute;"></canvas>
+    <img id="image" src="/files/raw_image.jpg" alt="Obraz">
+    <br>
+    <button id="calc-btn">Calculate</button>
+</body>
+
+<script>
+    const image = document.getElementById("image");
+    const canvas = document.getElementById("img_canvas"); 
+    const calcBtn = document.getElementById('calc-btn');
+    var points = [{x: 0, y: 0}, {x: 0, y: 0}];
+    var currentPoint = 0;
+
+    image.addEventListener('load', ()=>{
+        canvas.width = image.width;
+        canvas.height = image.height;
+        canvas.style.left = image.offsetLeft + 'px';
+        canvas.style.top = image.offsetTop + 'px';
+    });
+
+    canvas.addEventListener('click', (event)=>{
+        var rect = canvas.getBoundingClientRect();
+        var ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        points[(currentPoint++)%2] = {x: event.clientX - rect.left, y: event.clientY - rect.top};
+        points.forEach((point)=>{
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 5, 0, 2 * Math.PI);
+            ctx.fill();
+        });
+    });
+
+    calcBtn.addEventListener('click', async ()=>{
+        calcBtn.style.display = "none";
+        let params = new URLSearchParams();
+        params.append("x0", points[0].x);
+        params.append("y0", points[0].y);
+        params.append("x1", points[1].x);
+        params.append("y1", points[1].y);
+        await fetch('/calculate_path?' + params.toString());
+        window.location = "/await.html";
+    });
+
+</script>

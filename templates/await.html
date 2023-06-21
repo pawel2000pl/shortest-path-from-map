@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Shortest path</title>
+</head>
+<body>
+    <img src="/waiting-icon.gif" alt="Wait...">
+</body>
+</html>
+
+
+<script>
+        setInterval(async ()=>{
+        const response = await fetch('/is_work_done?');
+        const result = await response.json();
+        if (result.work_done)
+            window.location = "/display.html";
+        }, 1000);
+</script>
