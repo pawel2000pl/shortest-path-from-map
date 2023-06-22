@@ -45,23 +45,28 @@ def display():
     return render_template('display.html')
 
 def worker(raw_image, x0, y0, x1, y1, conn):
-    arr = find_shortest_path(raw_image, x0, y0, x1, y1)
-    conn.send(tuple(map(lambda sr: tuple(map(tuple, sr)), arr)))
+    try:
+        arr = find_shortest_path(raw_image, x0, y0, x1, y1)
+        conn.send(tuple(map(lambda sr: tuple(map(tuple, sr)), arr)))
+    except:
+        conn.send((((0, 0, 0),),))
 
 def start_work(x0, y0, x1, y1):
     global dest_image
     global work_done
     
-    conn1, conn2 = multiprocessing.Pipe()
-    process = multiprocessing.Process(target=worker, args=(raw_image, x0, y0, x1, y1, conn2))
-    process.start()
-    result = conn1.recv()
-    dest_image = np.array(result).astype(np.uint8)
-    while process.is_alive():
-        sleep(0.1)
-    process.join()
-    process.exitcode
-    work_done = True
+    try:
+        conn1, conn2 = multiprocessing.Pipe()
+        process = multiprocessing.Process(target=worker, args=(raw_image, x0, y0, x1, y1, conn2))
+        process.start()
+        result = conn1.recv()
+        dest_image = np.array(result).astype(np.uint8)
+        while process.is_alive():
+            sleep(0.1)
+        process.join()
+        process.exitcode
+    finally:
+        work_done = True
 
 @app.route('/calculate_path', methods=['GET'])
 def calculate_path():
