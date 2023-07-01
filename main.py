@@ -25,24 +25,27 @@ def upload_file():
         file = request.files['file']
         img = Image.open(file.stream)
         raw_image = np.array(img)
-        dest_image = raw_image
+        dest_image = raw_image.copy()
         return render_template('point_selector.html')
     return render_template('upload.html')
+
 
 @app.route('/files/<filename>', methods=['GET'])
 def raw_image(filename):
     global raw_image
     global dest_image
-    imgs = {"raw_image.jpg": raw_image, "dest_image.jpg": dest_image}
-    img = Image.fromarray(imgs.get(filename, np.zeros([640, 480, 3])))
+    imgs = {"raw_image.jpg": raw_image.astype(np.uint8), "dest_image.jpg": dest_image.astype(np.uint8)}
+    img = Image.fromarray(imgs.get(filename, np.zeros([640, 480, 3], dtype=np.uint8)))
     img_buffer = io.BytesIO()
     img.save(img_buffer, format='JPEG')
     img_buffer.seek(0)
     return send_file(img_buffer, mimetype='image/jpeg', as_attachment=True, download_name='image.jpg')
 
+
 @app.route('/display.html', methods=['GET'])
 def display():
     return render_template('display.html')
+
 
 def worker(raw_image, x0, y0, x1, y1, conn):
     try:
@@ -51,22 +54,26 @@ def worker(raw_image, x0, y0, x1, y1, conn):
     except:
         conn.send((((0, 0, 0),),))
 
+
 def start_work(x0, y0, x1, y1):
     global dest_image
     global work_done
-    
+
     try:
         conn1, conn2 = multiprocessing.Pipe()
-        process = multiprocessing.Process(target=worker, args=(raw_image, x0, y0, x1, y1, conn2))
+        process = multiprocessing.Process(target=worker, args=(
+        raw_image.copy(), x0, y0, x1, y1, conn2))
         process.start()
         result = conn1.recv()
-        dest_image = np.array(result).astype(np.uint8)
+        dest_image = find_shortest_path(np.array(result).astype(np.uint8), x0,
+                                        y0, x1, y1)
         while process.is_alive():
             sleep(0.1)
         process.join()
         process.exitcode
     finally:
         work_done = True
+
 
 @app.route('/calculate_path', methods=['GET'])
 def calculate_path():
@@ -81,16 +88,19 @@ def calculate_path():
     Thread(target=lambda: start_work(x0, y0, x1, y1)).start()
     return "ok"
 
+
 @app.route('/is_work_done', methods=['GET'])
 def is_work_done():
     global work_done
     return json.dumps({"work_done": work_done})
-    
+
+
 @app.route('/await.html', methods=['GET'])
 def await_html():
     global work_done
     return render_template('await.html')
-    
+
+
 @app.route('/waiting-icon.gif')
 def download_waiting_icon():
     return send_from_directory('static', 'waiting-icon.gif', as_attachment=True)
