@@ -46,7 +46,7 @@ def display():
 
 def worker(raw_image, x0, y0, x1, y1, conn):
     try:
-        arr = find_shortest_path(raw_image, x0, y0, x1, y1)
+        arr = find_shortest_path(raw_image, int(x0), int(y0), int(x1), int(y1))
         conn.send(tuple(map(lambda sr: tuple(map(tuple, sr)), arr)))
     except:
         conn.send((((0, 0, 0),),))
