@@ -25,6 +25,8 @@ def upload_file():
         file = request.files['file']
         img = Image.open(file.stream)
         raw_image = np.array(img)
+        if raw_image.shape[2] > 3:
+            raw_image = raw_image[:, :, :3]
         dest_image = raw_image
         return render_template('point_selector.html')
     return render_template('upload.html')
