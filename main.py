@@ -25,6 +25,8 @@ def upload_file():
         file = request.files['file']
         img = Image.open(file.stream)
         raw_image = np.array(img)
+        if raw_image.shape[2] > 3:
+            raw_image = raw_image[:, :, :3]
         dest_image = raw_image.copy()
         return render_template('point_selector.html')
     return render_template('upload.html')
@@ -49,7 +51,7 @@ def display():
 
 def worker(raw_image, x0, y0, x1, y1, conn):
     try:
-        arr = find_shortest_path(raw_image, x0, y0, x1, y1)
+        arr = find_shortest_path(raw_image, int(x0), int(y0), int(x1), int(y1))
         conn.send(tuple(map(lambda sr: tuple(map(tuple, sr)), arr)))
     except:
         conn.send((((0, 0, 0),),))
