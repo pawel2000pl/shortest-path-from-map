@@ -67,8 +67,7 @@ def start_work(x0, y0, x1, y1):
         raw_image.copy(), x0, y0, x1, y1, conn2))
         process.start()
         result = conn1.recv()
-        dest_image = find_shortest_path(np.array(result).astype(np.uint8), x0,
-                                        y0, x1, y1)
+        dest_image = np.array(result).astype(np.uint8)
         while process.is_alive():
             sleep(0.1)
         process.join()
