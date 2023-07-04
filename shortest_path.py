@@ -280,8 +280,10 @@ def find_shortest_path(img, x1, y1, x2, y2):
 
     shortest_path = nx.shortest_path(graph_nx, source=start_point, target=target)
     img_with_path = draw_shortest_path(img, shortest_path)
-    return img_with_path
-
+    if shortest_path==None:
+      return img_with_path, "Path not found"
+    else:
+      return img_with_path, ""
 
 def draw_shortest_path(img, coordinates):
     img_copy = Image.fromarray(img)

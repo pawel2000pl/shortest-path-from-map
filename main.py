@@ -14,6 +14,7 @@ app = Flask(__name__)
 
 raw_image = np.zeros([640, 480, 3])
 dest_image = np.zeros([640, 480, 3])
+result_message = ""
 work_done = False
 
 
@@ -46,13 +47,14 @@ def raw_image(filename):
 
 @app.route('/display.html', methods=['GET'])
 def display():
-    return render_template('display.html')
+    return render_template('display.html', message=result_message)
 
 
 def worker(raw_image, x0, y0, x1, y1, conn):
     try:
-        arr = find_shortest_path(raw_image, int(x0), int(y0), int(x1), int(y1))
+        arr, msg = find_shortest_path(raw_image, int(x0), int(y0), int(x1), int(y1))
         conn.send(tuple(map(lambda sr: tuple(map(tuple, sr)), arr)))
+        conn.send(msg)
     except:
         conn.send((((0, 0, 0),),))
 
@@ -60,6 +62,7 @@ def worker(raw_image, x0, y0, x1, y1, conn):
 def start_work(x0, y0, x1, y1):
     global dest_image
     global work_done
+    global result_message
 
     try:
         conn1, conn2 = multiprocessing.Pipe()
@@ -67,6 +70,7 @@ def start_work(x0, y0, x1, y1):
         raw_image.copy(), x0, y0, x1, y1, conn2))
         process.start()
         result = conn1.recv()
+        result_message = conn1.recv()
         dest_image = np.array(result).astype(np.uint8)
         while process.is_alive():
             sleep(0.1)
