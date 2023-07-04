@@ -3,7 +3,6 @@ import random
 import math
 from time import sleep
 from PIL import Image, ImageDraw
-
 import cv2
 from skimage import morphology
 import networkx as nx
@@ -219,12 +218,10 @@ class Ant:
 
             self.respawn()
 
-
     def respawn(self):
         self.position = random.choice([i for i in self.vertices]) if random.randrange(int(100 / self.random_respawn_probability)) < 100 else self.start_point
         self.visited_edges = set()
         self.moves_cost = 0
-
 
 def find_shortest_path(img, x1, y1, x2, y2):
     sleep(1)
@@ -233,32 +230,25 @@ def find_shortest_path(img, x1, y1, x2, y2):
     r = 1.5
     v1 = sum([sum([1 for x in X if (x-r)**2+(y-r)**2 <= r*r]) for y in Y]) / 64**2
     v2 = sum([sum([1 for x in X if (x-r)**2+y**2 <= r*r]) for y in Y]) / 64**2
-
-
     mask = np.array([[v1, v2, v1], [v2, 1.0, v2], [v1, v2, v1]])
-
     for i in range(4):
         mask = mask * mask
         s = sum(sum(mask)) - mask[1, 1]
         mask[1, 1] = s
         mask = mask / s
-
     mask = -mask
     mask[1, 1] = -mask[1, 1]
 
     gray = img[::, ::, 0]
     gray = cv2.GaussianBlur(gray,(5,5), 0)
-    gray01 = gray.astype(float) / 255
     dst = gray.astype(float) / 255
 
     dst = cv2.filter2D(dst, -1, mask)
     _min = dst.min()
     _max = dst.max()
     dst = (dst-_min)/(_max-_min)
-
     dst = dst**2
 
-#################################################################
     input_image = prog(dst*255, 55)
     start_point = (int(x1), int(y1))
     target = (int(x2), int(y2))
@@ -266,42 +256,29 @@ def find_shortest_path(img, x1, y1, x2, y2):
     weighted_image = get_weighted_image(reachable_image)
     skeletonized_image = get_skeletonized_image(reachable_image,weighted_image)
     reachable_points = get_reachable_points(skeletonized_image)
-    
     intersection_points = get_intersection_points(reachable_points, start_point, target)
-
-
     paths = get_paths(reachable_points, intersection_points)
-
     graph = get_graph(skeletonized_image, paths)
 
     pheromone_by_edge = {}
     for edge in graph["edges"]:
         pheromone_by_edge[edge] = 0
-
     for iteration in range(10):
         evaporation_rate = math.pow(math.e, -0.01 * iteration)
-
         num_ants = 500
         pheromone_strength = 100
         ants = [Ant(start_point, target, graph, pheromone_by_edge, pheromone_strength, 2 / max(1, iteration)) for _ in range(num_ants)]
-
         for _ in range(200):
             for ant in ants:
                 ant.move()
-
             for edge in pheromone_by_edge.keys():
                 pheromone_by_edge[edge] *= evaporation_rate
 
     graph_nx  = nx.Graph()
-
     for vertices, phero in pheromone_by_edge.items():
         graph_nx.add_edge(vertices[0], vertices[1], weight=10-phero)
 
     shortest_path = nx.shortest_path(graph_nx, source=start_point, target=target)
-    #print(type(x1), x2, y1, y2)
-    #print(shortest_path)
-    coordinates = [(int(x1), int(y1)), (307, 199), (350, 250), (400, 320),
-                   (450, 380), (512, 429), (int(x2), int(y2))]
     img_with_path = draw_shortest_path(img, shortest_path)
     return img_with_path
 
