@@ -422,13 +422,12 @@ def find_path(input_image, start_point, target):
 
 
 def draw_shortest_path(img, coordinates):
-    img_copy = Image.fromarray(img)
-    draw = ImageDraw.Draw(img_copy)
-    for i in range(len(coordinates) - 1):
-        x1, y1 = coordinates[i]
-        x2, y2 = coordinates[i + 1]
-        draw.line([(x1, y1), (x2, y2)], fill=(255, 0, 0), width=2)
-    return np.array(img_copy)
+    for coordinate in coordinates:
+        x, y = coordinate
+        img[y, x] = (255, 0, 0)
+
+    img_np = np.array(img)
+    return img_np
 
 
 def find_shortest_path(img, x1, y1, x2, y2):
