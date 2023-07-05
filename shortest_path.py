@@ -1,16 +1,60 @@
-import numpy as np
-import random
-import math
-from time import sleep
-from PIL import Image, ImageDraw
-
 import cv2
-from skimage import morphology
+import math
+import random
+
+import numpy as np
 import networkx as nx
 
+from skimage import morphology
+from PIL import Image, ImageDraw
 
-def prog(img, b=64):
-    return (img >= b).astype(np.uint8) * 255
+
+def get_mask():
+    X = np.linspace(0, 1, 64)
+    Y = np.linspace(0, 1, 64)
+    r = 1.5
+    v1 = (
+        sum([sum([1 for x in X if (x - r) ** 2 + (y - r) ** 2 <= r * r]) for y in Y])
+        / 64**2
+    )
+    v2 = (
+        sum([sum([1 for x in X if (x - r) ** 2 + y**2 <= r * r]) for y in Y])
+        / 64**2
+    )
+
+    mask = np.array([[v1, v2, v1], [v2, 1.0, v2], [v1, v2, v1]])
+
+    for i in range(4):
+        mask = mask * mask
+        s = sum(sum(mask)) - mask[1, 1]
+        mask[1, 1] = s
+        mask = mask / s
+
+    mask = -mask
+    mask[1, 1] = -mask[1, 1]
+
+    return mask
+
+
+def get_binary_image(input_image, threshold=55):
+    mask = get_mask()
+
+    def prog(img, b=64):
+        return (img >= b).astype(np.uint8) * 255
+
+    input_image = input_image.astype(float)
+    gray = (input_image[::2, ::2, 0] + input_image[::2, ::2, 1] + input_image[::2, ::2, 2]) / (3 * 255)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    dst = cv2.filter2D(gray, -1, mask)
+    _min = dst.min()
+    _max = dst.max()
+    dst = (dst - _min) / (_max - _min)
+
+    dst = dst**2
+
+    return cv2.resize(prog(dst * 255, threshold), (dst.shape[0] * 2, dst.shape[1] * 2))
+
 
 def get_reachable_image(input_image, start_point):
     image = np.where(input_image > 0, 1, 0)
@@ -30,7 +74,9 @@ def get_reachable_image(input_image, start_point):
         min_y = max(0, current_point[1] - 1)
         max_y = min(image_size_y - 1, current_point[1] + 1)
 
-        neighbors = [(x, y) for y in range(min_y, max_y + 1) for x in range(min_x, max_x + 1)]
+        neighbors = [
+            (x, y) for y in range(min_y, max_y + 1) for x in range(min_x, max_x + 1)
+        ]
 
         for point in neighbors:
             x = point[0]
@@ -40,6 +86,7 @@ def get_reachable_image(input_image, start_point):
                 reachable_stack.append(point)
 
     return reachable_image
+
 
 def get_weighted_image(input_image):
     weighted_image = input_image
@@ -55,11 +102,13 @@ def get_weighted_image(input_image):
 
     return weighted_image
 
-def get_skeletonized_image(input_image,weighted_image):
+
+def get_skeletonized_image(input_image, weighted_image):
     skeleton = morphology.skeletonize(input_image)
     skeletonized_image = weighted_image
     skeletonized_image[~skeleton] = 0
     return skeletonized_image
+
 
 def get_reachable_points(skeletonized_image):
     reachable_points = set()
@@ -69,10 +118,15 @@ def get_reachable_points(skeletonized_image):
                 reachable_points.add((x, y))
     return reachable_points
 
+
 def get_intersection_points(reachable_points, start_point, target):
     intersection_points = set()
     for point in reachable_points:
-        neighbors = [(x, y) for x in range(point[0] - 1, point[0] + 2) for y in range(point[1] - 1, point[1] + 2)]
+        neighbors = [
+            (x, y)
+            for x in range(point[0] - 1, point[0] + 2)
+            for y in range(point[1] - 1, point[1] + 2)
+        ]
         neighbors = [i for i in neighbors if i in reachable_points and i != point]
         if len(neighbors) > 2:
             intersection_points.add(point)
@@ -85,13 +139,20 @@ def get_intersection_points(reachable_points, start_point, target):
 
     return intersection_points
 
+
 def get_paths(reachable_points, intersection_points):
     available_points = reachable_points.copy()
     paths = []
 
     for intersection_point in intersection_points:
-        neighbors = [(x, y) for x in range(intersection_point[0] - 1, intersection_point[0] + 2) for y in range(intersection_point[1] - 1, intersection_point[1] + 2)]
-        neighbors = [i for i in neighbors if i in available_points and i != intersection_point]
+        neighbors = [
+            (x, y)
+            for x in range(intersection_point[0] - 1, intersection_point[0] + 2)
+            for y in range(intersection_point[1] - 1, intersection_point[1] + 2)
+        ]
+        neighbors = [
+            i for i in neighbors if i in available_points and i != intersection_point
+        ]
 
         # Intersection next to another intersection
         for end in [i for i in neighbors if i in intersection_points]:
@@ -106,8 +167,16 @@ def get_paths(reachable_points, intersection_points):
             last_point = intersection_point
 
             while True:
-                neighbors = [(x, y) for x in range(path_point[0] - 1, path_point[0] + 2) for y in range(path_point[1] - 1, path_point[1] + 2)]
-                neighbors = [i for i in neighbors if i != path_point and i != last_point and i in available_points]
+                neighbors = [
+                    (x, y)
+                    for x in range(path_point[0] - 1, path_point[0] + 2)
+                    for y in range(path_point[1] - 1, path_point[1] + 2)
+                ]
+                neighbors = [
+                    i
+                    for i in neighbors
+                    if i != path_point and i != last_point and i in available_points
+                ]
 
                 if len(neighbors) == 0:
                     # No append to avoid some dead ends
@@ -128,6 +197,7 @@ def get_paths(reachable_points, intersection_points):
 
     return paths
 
+
 def get_graph(skeletonized_image, paths):
     vertices = set()
     edges = set()
@@ -146,7 +216,7 @@ def get_graph(skeletonized_image, paths):
             vertices.add(end)
             vertices_costs[end] = 1 / skeletonized_image[end[1], end[0]]
 
-        edge = ((begin, end))
+        edge = (begin, end)
         edges.add(edge)
 
         cost = 0
@@ -172,11 +242,20 @@ def get_graph(skeletonized_image, paths):
         "vertices_costs": vertices_costs,
         "edges_costs": edges_costs,
         "path_by_edge": path_by_edge,
-        "edges_by_vertice": edges_by_vertice
+        "edges_by_vertice": edges_by_vertice,
     }
 
+
 class Ant:
-    def __init__(self, start_point, target, graph, pheromone_by_edge, peheromone_strength, random_respawn_probability):
+    def __init__(
+        self,
+        start_point,
+        target,
+        graph,
+        pheromone_by_edge,
+        peheromone_strength,
+        random_respawn_probability,
+    ):
         self.vertices = graph["vertices"]
         self.edges = graph["edges"]
         self.vertices_costs = graph["vertices_costs"]
@@ -215,65 +294,23 @@ class Ant:
 
         if self.position == self.target:
             for edge in self.visited_edges:
-                self.pheromone_by_edge[edge] += self.pheromone_strength / math.log(self.moves_cost)
+                self.pheromone_by_edge[edge] += self.pheromone_strength / math.log(
+                    self.moves_cost
+                )
 
             self.respawn()
 
-
     def respawn(self):
-        self.position = random.choice([i for i in self.vertices]) if random.randrange(int(100 / self.random_respawn_probability)) < 100 else self.start_point
+        self.position = (
+            random.choice([i for i in self.vertices])
+            if random.randrange(int(100 / self.random_respawn_probability)) < 100
+            else self.start_point
+        )
         self.visited_edges = set()
         self.moves_cost = 0
 
 
-def find_shortest_path(img, x1, y1, x2, y2):
-    sleep(1)
-    X = np.linspace(0, 1, 64)
-    Y = np.linspace(0, 1, 64)
-    r = 1.5
-    v1 = sum([sum([1 for x in X if (x-r)**2+(y-r)**2 <= r*r]) for y in Y]) / 64**2
-    v2 = sum([sum([1 for x in X if (x-r)**2+y**2 <= r*r]) for y in Y]) / 64**2
-
-
-    mask = np.array([[v1, v2, v1], [v2, 1.0, v2], [v1, v2, v1]])
-
-    for i in range(4):
-        mask = mask * mask
-        s = sum(sum(mask)) - mask[1, 1]
-        mask[1, 1] = s
-        mask = mask / s
-
-    mask = -mask
-    mask[1, 1] = -mask[1, 1]
-
-    gray = img[::, ::, 0]
-    gray = cv2.GaussianBlur(gray,(5,5), 0)
-    gray01 = gray.astype(float) / 255
-    dst = gray.astype(float) / 255
-
-    dst = cv2.filter2D(dst, -1, mask)
-    _min = dst.min()
-    _max = dst.max()
-    dst = (dst-_min)/(_max-_min)
-
-    dst = dst**2
-
-#################################################################
-    input_image = prog(dst*255, 55)
-    start_point = (int(x1), int(y1))
-    target = (int(x2), int(y2))
-    reachable_image = get_reachable_image(input_image, start_point)
-    weighted_image = get_weighted_image(reachable_image)
-    skeletonized_image = get_skeletonized_image(reachable_image,weighted_image)
-    reachable_points = get_reachable_points(skeletonized_image)
-    
-    intersection_points = get_intersection_points(reachable_points, start_point, target)
-
-
-    paths = get_paths(reachable_points, intersection_points)
-
-    graph = get_graph(skeletonized_image, paths)
-
+def simulate_ants(graph, start_point, target):
     pheromone_by_edge = {}
     for edge in graph["edges"]:
         pheromone_by_edge[edge] = 0
@@ -283,7 +320,17 @@ def find_shortest_path(img, x1, y1, x2, y2):
 
         num_ants = 500
         pheromone_strength = 100
-        ants = [Ant(start_point, target, graph, pheromone_by_edge, pheromone_strength, 2 / max(1, iteration)) for _ in range(num_ants)]
+        ants = [
+            Ant(
+                start_point,
+                target,
+                graph,
+                pheromone_by_edge,
+                pheromone_strength,
+                2 / max(1, iteration),
+            )
+            for _ in range(num_ants)
+        ]
 
         for _ in range(200):
             for ant in ants:
@@ -292,19 +339,86 @@ def find_shortest_path(img, x1, y1, x2, y2):
             for edge in pheromone_by_edge.keys():
                 pheromone_by_edge[edge] *= evaporation_rate
 
-    graph_nx  = nx.Graph()
+    return pheromone_by_edge
 
-    for vertices, phero in pheromone_by_edge.items():
-        graph_nx.add_edge(vertices[0], vertices[1], weight=10-phero)
 
-    shortest_path = nx.shortest_path(graph_nx, source=start_point, target=target)
-    #print(type(x1), x2, y1, y2)
-    #print(shortest_path)
-    coordinates = [(int(x1), int(y1)), (307, 199), (350, 250), (400, 320),
-                   (450, 380), (512, 429), (int(x2), int(y2))]
+def get_strongest_pheromone_path(graph, pheromone_by_edge, start_point, target):
+    strongest_pheromone_path = [start_point]
+    position = start_point
+    visited_edges = set()
+    while position != target:
+        edges = [
+            i for i in graph["edges_by_vertice"][position] if i not in visited_edges
+        ]
+        if len(edges) == 0:
+            return False, "Ants began to walk in a loop and died."
 
-    img_with_path = draw_shortest_path(img, coordinates)
-    return img_with_path, "example_message"
+        strongest_pheromone_edge = edges[0]
+        strongest_pheromone = pheromone_by_edge[strongest_pheromone_edge]
+        for edge in edges:
+            if pheromone_by_edge[edge] > strongest_pheromone:
+                strongest_pheromone = pheromone_by_edge[edge]
+                strongest_pheromone_edge = edge
+
+        visited_edges.add(strongest_pheromone_edge)
+
+        path = graph["path_by_edge"][strongest_pheromone_edge]
+        edge_end = (
+            strongest_pheromone_edge[1]
+            if strongest_pheromone_edge[0] == position
+            else strongest_pheromone_edge[0]
+        )
+
+        for i in path[1:-1]:
+            strongest_pheromone_path.append(i)
+        strongest_pheromone_path.append(edge_end)
+
+        position = edge_end
+
+    return True, strongest_pheromone_path
+
+
+def find_path(input_image, start_point, target):
+    binary_image = get_binary_image(input_image, 55)
+    reachable_image = get_reachable_image(binary_image, start_point)
+    weighted_image = get_weighted_image(reachable_image)
+    skeletonized_image = get_skeletonized_image(reachable_image, weighted_image)
+
+    reachable_points = get_reachable_points(skeletonized_image)
+    
+    reachable_points_ray = tuple(reachable_points)
+    min_ray = input_image.shape[0]**1 + input_image.shape[1]**2
+    new_point = start_point
+    for i, p in enumerate(reachable_points_ray):
+        r = (p[0]-start_point[0])**2 + (p[1]-start_point[1])**2
+        if r < min_ray:
+            min_ray = r
+            new_point = p
+    start_point = new_point
+    
+    reachable_points_ray = tuple(reachable_points)
+    min_ray = input_image.shape[0]**1 + input_image.shape[1]**2
+    new_point = target
+    for i, p in enumerate(reachable_points_ray):
+        r = (p[0]-target[0])**2 + (p[1]-target[1])**2
+        if r < min_ray:
+            min_ray = r
+            new_point = p
+    target = new_point
+
+    if start_point not in reachable_points:
+        return False, f"Start point {start_point} is not on any road."
+
+    if target not in reachable_points:
+        return False, f"Target {target} is not rachable from start point {start_point}."
+
+    intersection_points = get_intersection_points(reachable_points, start_point, target)
+    paths = get_paths(reachable_points, intersection_points)
+
+    graph = get_graph(skeletonized_image, paths)
+    pheromone_by_edge = simulate_ants(graph, start_point, target)
+
+    return get_strongest_pheromone_path(graph, pheromone_by_edge, start_point, target)
 
 
 def draw_shortest_path(img, coordinates):
@@ -315,3 +429,10 @@ def draw_shortest_path(img, coordinates):
         x2, y2 = coordinates[i + 1]
         draw.line([(x1, y1), (x2, y2)], fill=(255, 0, 0), width=2)
     return np.array(img_copy)
+
+
+def find_shortest_path(img, x1, y1, x2, y2):
+    is_path, result = find_path(np.swapaxes(img, 0, 1), (x1, y1), (x2, y2))
+    if is_path:
+        return draw_shortest_path(img, result), "Everything is ok, no errors"
+    return img, result
