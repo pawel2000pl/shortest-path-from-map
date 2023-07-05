@@ -3,24 +3,15 @@ import math
 import random
 
 import numpy as np
-import networkx as nx
 
 from skimage import morphology
-from PIL import Image, ImageDraw
-
 
 def get_mask():
     X = np.linspace(0, 1, 64)
     Y = np.linspace(0, 1, 64)
     r = 1.5
-    v1 = (
-        sum([sum([1 for x in X if (x - r) ** 2 + (y - r) ** 2 <= r * r]) for y in Y])
-        / 64**2
-    )
-    v2 = (
-        sum([sum([1 for x in X if (x - r) ** 2 + y**2 <= r * r]) for y in Y])
-        / 64**2
-    )
+    v1 = sum([sum([1 for x in X if (x-r)**2+(y-r)**2 <= r*r]) for y in Y]) / 64**2
+    v2 = sum([sum([1 for x in X if (x-r)**2+y**2 <= r*r]) for y in Y]) / 64**2
 
     mask = np.array([[v1, v2, v1], [v2, 1.0, v2], [v1, v2, v1]])
 
@@ -42,18 +33,18 @@ def get_binary_image(input_image, threshold=55):
     def prog(img, b=64):
         return (img >= b).astype(np.uint8) * 255
 
-    input_image = input_image.astype(float)
-    gray = (input_image[::2, ::2, 0] + input_image[::2, ::2, 1] + input_image[::2, ::2, 2]) / (3 * 255)
-    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+    gray = input_image[::2, ::2, 0]
+    gray = cv2.GaussianBlur(gray,(5,5), 0)
+    dst = gray.astype(float) / 255
 
-    dst = cv2.filter2D(gray, -1, mask)
+    dst = cv2.filter2D(dst, -1, mask)
     _min = dst.min()
     _max = dst.max()
-    dst = (dst - _min) / (_max - _min)
+    dst = (dst-_min)/(_max-_min)
 
     dst = dst**2
 
-    return cv2.resize(prog(dst * 255, threshold), (dst.shape[0] * 2, dst.shape[1] * 2))
+    return prog(dst*255, threshold)
 
 
 def get_reachable_image(input_image, start_point):
@@ -377,36 +368,28 @@ def get_strongest_pheromone_path(graph, pheromone_by_edge, start_point, target):
 
     return True, strongest_pheromone_path
 
+def get_closest_reachable_point(original, reachable_points):
+    min_distance_squared = float("inf")
+    for point in reachable_points:
+        distance_squared = (original[0] - point[0])**2 + (original[1] - point[1])**2
+        if distance_squared < min_distance_squared:
+            min_distance_squared = distance_squared
+            closest_point = point
+
+    return closest_point
 
 def find_path(input_image, start_point, target):
     binary_image = get_binary_image(input_image, 55)
+
     reachable_image = get_reachable_image(binary_image, start_point)
     weighted_image = get_weighted_image(reachable_image)
     skeletonized_image = get_skeletonized_image(reachable_image, weighted_image)
-
     reachable_points = get_reachable_points(skeletonized_image)
-    
-    reachable_points_ray = tuple(reachable_points)
-    min_ray = input_image.shape[0]**1 + input_image.shape[1]**2
-    new_point = start_point
-    for i, p in enumerate(reachable_points_ray):
-        r = (p[0]-start_point[0])**2 + (p[1]-start_point[1])**2
-        if r < min_ray:
-            min_ray = r
-            new_point = p
-    start_point = new_point
-    
-    reachable_points_ray = tuple(reachable_points)
-    min_ray = input_image.shape[0]**1 + input_image.shape[1]**2
-    new_point = target
-    for i, p in enumerate(reachable_points_ray):
-        r = (p[0]-target[0])**2 + (p[1]-target[1])**2
-        if r < min_ray:
-            min_ray = r
-            new_point = p
-    target = new_point
 
-    if start_point not in reachable_points:
+    start_point = get_closest_reachable_point(start_point, reachable_points)
+    target = get_closest_reachable_point(target, reachable_points)
+
+    if start_point not in reachable_points or len(reachable_points) == 1:
         return False, f"Start point {start_point} is not on any road."
 
     if target not in reachable_points:
@@ -422,17 +405,16 @@ def find_path(input_image, start_point, target):
 
 
 def draw_shortest_path(img, coordinates):
-    img_copy = Image.fromarray(img)
-    draw = ImageDraw.Draw(img_copy)
-    for i in range(len(coordinates) - 1):
-        x1, y1 = coordinates[i]
-        x2, y2 = coordinates[i + 1]
-        draw.line([(x1, y1), (x2, y2)], fill=(255, 0, 0), width=2)
-    return np.array(img_copy)
+    for coordinate in coordinates:
+        x, y = coordinate
+        img[y, x] = (255, 0, 0)
 
+    img_np = np.array(img)
+    return img_np
 
 def find_shortest_path(img, x1, y1, x2, y2):
-    is_path, result = find_path(np.swapaxes(img, 0, 1), (x1, y1), (x2, y2))
+    is_path, result = find_path(img, (x1 // 2, y1 // 2), (x2 // 2, y2 // 2))
     if is_path:
-        return draw_shortest_path(img, result), "Everything is ok, no errors"
+        coordinates = [(i[0] * 2, i[1] * 2) for i in result]
+        return draw_shortest_path(img, coordinates), "Everything is ok, no errors"
     return img, result
