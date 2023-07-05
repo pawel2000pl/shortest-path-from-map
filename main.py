@@ -1,6 +1,7 @@
 import io
-import multiprocessing
 import json
+import traceback
+import multiprocessing
 
 import numpy as np
 
@@ -18,44 +19,55 @@ result_message = ""
 work_done = False
 
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route("/", methods=["GET", "POST"])
 def upload_file():
-    if request.method == 'POST':
+    if request.method == "POST":
         global raw_image
         global dest_image
-        file = request.files['file']
+        file = request.files["file"]
         img = Image.open(file.stream)
         raw_image = np.array(img)
         if raw_image.shape[2] > 3:
             raw_image = raw_image[:, :, :3]
         dest_image = raw_image.copy()
-        return render_template('point_selector.html')
-    return render_template('upload.html')
+        return render_template("point_selector.html")
+    return render_template("upload.html")
 
 
-@app.route('/files/<filename>', methods=['GET'])
+@app.route("/files/<filename>", methods=["GET"])
 def raw_image(filename):
     global raw_image
     global dest_image
-    imgs = {"raw_image.jpg": raw_image.astype(np.uint8), "dest_image.jpg": dest_image.astype(np.uint8)}
+    imgs = {
+        "raw_image.jpg": raw_image.astype(np.uint8),
+        "dest_image.jpg": dest_image.astype(np.uint8),
+    }
     img = Image.fromarray(imgs.get(filename, np.zeros([640, 480, 3], dtype=np.uint8)))
     img_buffer = io.BytesIO()
-    img.save(img_buffer, format='JPEG')
+    img.save(img_buffer, format="JPEG")
     img_buffer.seek(0)
-    return send_file(img_buffer, mimetype='image/jpeg', as_attachment=True, download_name='image.jpg')
+    return send_file(
+        img_buffer, mimetype="image/jpeg", as_attachment=True, download_name="image.jpg"
+    )
 
 
-@app.route('/display.html', methods=['GET'])
+@app.route("/display.html", methods=["GET"])
 def display():
-    return render_template('display.html', message=result_message)
+    return render_template("display.html", message=result_message)
 
 
 def worker(raw_image, x0, y0, x1, y1, conn):
     try:
-        arr, msg = find_shortest_path(raw_image, int(x0), int(y0), int(x1), int(y1))
+        arr, msg = find_shortest_path(raw_image, round(float(x0)), round(float(y0)), round(float(x1)), round(float(y1)))
         conn.send(tuple(map(lambda sr: tuple(map(tuple, sr)), arr)))
         conn.send(msg)
-    except:
+    except Exception as error:
+        error_msg = (
+            str(error)
+            + "\n\n"
+            + str().join(traceback.TracebackException.from_exception(error).format())
+        )
+        print(error_msg, flush=True)
         conn.send((((0, 0, 0),),))
 
 
@@ -66,8 +78,9 @@ def start_work(x0, y0, x1, y1):
 
     try:
         conn1, conn2 = multiprocessing.Pipe()
-        process = multiprocessing.Process(target=worker, args=(
-        raw_image.copy(), x0, y0, x1, y1, conn2))
+        process = multiprocessing.Process(
+            target=worker, args=(raw_image.copy(), x0, y0, x1, y1, conn2)
+        )
         process.start()
         result = conn1.recv()
         result_message = conn1.recv()
@@ -80,36 +93,35 @@ def start_work(x0, y0, x1, y1):
         work_done = True
 
 
-@app.route('/calculate_path', methods=['GET'])
+@app.route("/calculate_path", methods=["GET"])
 def calculate_path():
-        
-    x0 = request.args.get('x0') 
-    y0 = request.args.get('y0') 
-    x1 = request.args.get('x1') 
-    y1 = request.args.get('y1') 
-    
+    x0 = request.args.get("x0")
+    y0 = request.args.get("y0")
+    x1 = request.args.get("x1")
+    y1 = request.args.get("y1")
+
     global work_done
     work_done = False
     Thread(target=lambda: start_work(x0, y0, x1, y1)).start()
     return "ok"
 
 
-@app.route('/is_work_done', methods=['GET'])
+@app.route("/is_work_done", methods=["GET"])
 def is_work_done():
     global work_done
     return json.dumps({"work_done": work_done})
 
 
-@app.route('/await.html', methods=['GET'])
+@app.route("/await.html", methods=["GET"])
 def await_html():
     global work_done
-    return render_template('await.html')
+    return render_template("await.html")
 
 
-@app.route('/waiting-icon.gif')
+@app.route("/waiting-icon.gif")
 def download_waiting_icon():
-    return send_from_directory('static', 'waiting-icon.gif', as_attachment=True)
+    return send_from_directory("static", "waiting-icon.gif", as_attachment=True)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)
